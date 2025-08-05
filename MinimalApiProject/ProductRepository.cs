@@ -1,6 +1,7 @@
 ﻿using CsvHelper;
 using CsvHelper.Configuration;
 using Dapper;
+using MinimalApiProject.ModelsCsv;
 using System.Data;
 using System.Data.SqlClient;
 using System.Formats.Asn1;
@@ -32,7 +33,7 @@ namespace MinimalApiProject
                         CREATE TABLE Products (
                             Id INT PRIMARY KEY,
                             SKU NVARCHAR(100) NOT NULL,
-                            Name NVARCHAR(255),
+                            Name NVARCHAR(500),
                             EAN NVARCHAR(100),
                             ProducerName NVARCHAR(500),
                             Category NVARCHAR(1000),
@@ -74,23 +75,38 @@ namespace MinimalApiProject
 
             var productMap = new Dictionary<string, int>();
 
-            using var reader1 = new StreamReader(productsFile);
-            using var csv1 = new CsvReader(reader1, new CsvConfiguration(CultureInfo.InvariantCulture) { HeaderValidated = null, MissingFieldFound = null });
-            var records1 = csv1.GetRecords<dynamic>().Where(x => x.is_wire == "0" && int.Parse(x.shipping) <= 24 && x.available == "1");
-            foreach (var r in records1)
+            // Load Products
+            var productList = new List<ProductCsv>();
+            using (var reader1 = new StreamReader(productsFile))
+            using (var csv1 = new CsvReader(reader1, new CsvConfiguration(CultureInfo.InvariantCulture)
             {
-                await _db.ExecuteAsync("INSERT INTO Products (Id, SKU, Name, EAN, ProducerName, Category, DefaultImage) VALUES (@Id, @SKU, @Name, @EAN, @ProducerName, @Category, @DefaultImage)", new
+                Delimiter = ";",
+                HeaderValidated = null,
+                MissingFieldFound = null,
+                BadDataFound = null
+            }))
+            {
+                var records1 = csv1.GetRecords<ProductCsv>().Where(x =>
+                    int.TryParse(x.shipping?.Trim().TrimEnd('h'), out var h1) && h1 <= 24 && x.is_wire == "0" && x.available == "1");
+
+                foreach (var r in records1)
                 {
-                    Id = int.Parse(r.ID),
-                    SKU = r.SKU,
-                    Name = r.name,
-                    EAN = r.EAN,
-                    ProducerName = r.producer_name,
-                    Category = r.category,
-                    DefaultImage = r.default_image
-                });
-                productMap[r.SKU] = int.Parse(r.ID);
+                    productList.Add(r);
+                    if (!productMap.ContainsKey(r.SKU))
+                        productMap[r.SKU] = int.Parse(r.ID);
+                }
             }
+
+            BulkInsert(productList.Select(r => new
+            {
+                Id = int.Parse(r.ID),
+                r.SKU,
+                Name = r.name,
+                r.EAN,
+                ProducerName = r.producer_name,
+                Category = r.category,
+                DefaultImage = r.default_image
+            }), "Products");
 
             using var reader2 = new StreamReader(inventoryFile);
             using var csv2 = new CsvReader(reader2, new CsvConfiguration(CultureInfo.InvariantCulture) { HeaderValidated = null, MissingFieldFound = null });
