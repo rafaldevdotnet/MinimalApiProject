@@ -19,16 +19,15 @@ namespace MinimalApiProject
         public ProductRepository(IDbConnection db)
         {
             _db = db;            
-            Directory.CreateDirectory(_basePath);
-            InitDb();
+            Directory.CreateDirectory(_basePath);            
         }
 
 
 
 
-        public void InitDb()
+        public async Task InitDb()
         {
-            _db.Execute(@"
+            await _db.ExecuteAsync(@"
                         IF OBJECT_ID('Products', 'U') IS NOT NULL
                             DROP TABLE Products;
                         

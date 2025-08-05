@@ -35,8 +35,11 @@ app.UseSwaggerUI();
 
 app.MapPost("/import-data", async (ProductRepository repo) =>
 {
+    DateTime startTime = DateTime.Now;
+    await repo.InitDb();
     await repo.ImportDataAsync();
-    return Results.Ok("Import completed.");
+    TimeSpan duration = DateTime.Now - startTime;
+    return Results.Ok($"Import completed in {duration.TotalSeconds.ToString("#0.00")} seconds");
 });
 
 
