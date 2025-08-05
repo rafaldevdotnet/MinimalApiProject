@@ -29,7 +29,9 @@ namespace MinimalApiProject
         public void InitDb()
         {
             _db.Execute(@"
-                        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Products' AND xtype='U')
+                        IF OBJECT_ID('Products', 'U') IS NOT NULL
+                            DROP TABLE Products;
+                        
                         CREATE TABLE Products (
                             Id INT PRIMARY KEY,
                             SKU NVARCHAR(100) NOT NULL,
@@ -39,18 +41,22 @@ namespace MinimalApiProject
                             Category NVARCHAR(1000),
                             DefaultImage NVARCHAR(500)
                         );
+
                         
-                        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Inventory' AND xtype='U')
+                        IF OBJECT_ID('Inventory', 'U') IS NOT NULL
+                            DROP TABLE Inventory;
+
                         CREATE TABLE Inventory (
                             Id INT IDENTITY PRIMARY KEY,
                             ProductId INT,
                             SKU NVARCHAR(100),
                             Unit NVARCHAR(50),
-                            Qty INT,
+                            Qty DECIMAL(18,3),
                             ShippingCost DECIMAL(18,2)
                         );
                         
-                        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Prices' AND xtype='U')
+                        IF OBJECT_ID('Prices', 'U') IS NOT NULL
+                            DROP TABLE Prices;
                         CREATE TABLE Prices (
                             Id INT IDENTITY PRIMARY KEY,
                             SKU NVARCHAR(100),
@@ -108,34 +114,97 @@ namespace MinimalApiProject
                 DefaultImage = r.default_image
             }), "Products");
 
-            using var reader2 = new StreamReader(inventoryFile);
-            using var csv2 = new CsvReader(reader2, new CsvConfiguration(CultureInfo.InvariantCulture) { HeaderValidated = null, MissingFieldFound = null });
-            var records2 = csv2.GetRecords<dynamic>().Where(x => int.Parse(x.shipping) <= 24 && productMap.ContainsKey(x.sku));
-            foreach (var r in records2)
+            // Load Inventory
+            var inventoryList = new List<InventoryCsv>();
+            using (var reader2 = new StreamReader(inventoryFile))
+            using (var csv2 = new CsvReader(reader2, new CsvConfiguration(CultureInfo.InvariantCulture)
             {
-                await _db.ExecuteAsync("INSERT INTO Inventory (ProductId, SKU, Unit, Qty, ShippingCost) VALUES (@ProductId, @SKU, @Unit, @Qty, @ShippingCost)", new
+                Delimiter = ",",
+                HeaderValidated = null,
+                MissingFieldFound = null,
+                BadDataFound = null
+            }))
+            {
+                var records2 = csv2.GetRecords<InventoryCsv>().Where(x =>
+                    int.TryParse(x.shipping?.Trim().TrimEnd('h'), out var h2) && h2 <= 24 && productMap.ContainsKey(x.sku));
+
+                foreach (var r in records2)
                 {
-                    ProductId = productMap[r.sku],
-                    SKU = r.sku,
-                    Unit = r.unit,
-                    Qty = int.Parse(r.qty),
-                    ShippingCost = decimal.Parse(r.shipping_cost)
-                });
+                    inventoryList.Add(r);
+                }
             }
 
-            using var reader3 = new StreamReader(pricesFile);
-            using var csv3 = new CsvReader(reader3, new CsvConfiguration(CultureInfo.InvariantCulture) { HeaderValidated = null, MissingFieldFound = null, HasHeaderRecord = false });
-            var records3 = csv3.GetRecords<dynamic>();
-            foreach (var r in records3)
+            BulkInsert(inventoryList.Select(r => new
             {
-                await _db.ExecuteAsync("INSERT INTO Prices (SKU, PricePerUnit, PricePerLogisticUnit) VALUES (@SKU, @PPU, @PPLU)", new
+                ProductId = productMap[r.sku],
+                r.sku,
+                r.unit,
+                Qty = decimal.TryParse(r.qty, CultureInfo.InvariantCulture, out var q) ? q : 0,
+                ShippingCost = decimal.TryParse(r.shipping_cost, CultureInfo.InvariantCulture, out var sc) ? sc : 0
+            }), "Inventory");
+
+            // Load Prices
+            var priceList = new List<PriceCsv>();
+            using (var reader3 = new StreamReader(pricesFile))
+            using (var csv3 = new CsvReader(reader3, new CsvConfiguration(CultureInfo.InvariantCulture)
+            {
+                Delimiter = "\",",
+                HasHeaderRecord = false,
+                HeaderValidated = null,
+                MissingFieldFound = null,
+                BadDataFound = null
+            }))
+            {
+                priceList = csv3.GetRecords<PriceCsv>().ToList();
+            }
+
+            BulkInsert(priceList.Select(r => new
+            {
+                SKU = r.Column2,
+                PricePerUnit = decimal.TryParse(r.Column3, CultureInfo.InvariantCulture, out var pu) ? pu : 0,
+                PricePerLogisticUnit = decimal.TryParse(r.Column6, CultureInfo.InvariantCulture, out var plu) ? plu : 0
+            }), "Prices");
+        }
+        private void BulkInsert<T>(IEnumerable<T> data, string tableName)
+        {
+            if (_db is SqlConnection sqlConn)
+            {
+                if (sqlConn.State != ConnectionState.Open)
+                    sqlConn.Open();
+                using var bulkCopy = new SqlBulkCopy(sqlConn);
+                var dataTable = new DataTable();
+                var props = typeof(T).GetProperties();
+
+                foreach (var prop in props)
                 {
-                    SKU = r.Column2,
-                    PPU = decimal.Parse(r.Column3),
-                    PPLU = decimal.Parse(r.Column6)
-                });
+                    dataTable.Columns.Add(prop.Name, Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType);
+                }
+
+                foreach (var item in data)
+                {
+                    var values = props.Select(p => p.GetValue(item) ?? DBNull.Value).ToArray();
+                    dataTable.Rows.Add(values);
+                }
+
+                bulkCopy.DestinationTableName = tableName;
+                if (tableName == "Inventory")
+                {
+                    bulkCopy.ColumnMappings.Add("ProductId", "ProductId");
+                    bulkCopy.ColumnMappings.Add("SKU", "SKU");
+                    bulkCopy.ColumnMappings.Add("Unit", "Unit");
+                    bulkCopy.ColumnMappings.Add("Qty", "Qty");
+                    bulkCopy.ColumnMappings.Add("ShippingCost", "ShippingCost");
+                }
+                if (tableName == "Prices")
+                {
+                    bulkCopy.ColumnMappings.Add("SKU", "SKU");
+                    bulkCopy.ColumnMappings.Add("PricePerUnit", "PricePerUnit");
+                    bulkCopy.ColumnMappings.Add("PricePerLogisticUnit", "PricePerLogisticUnit");
+                }
+                bulkCopy.WriteToServer(dataTable);
             }
         }
+
 
         public async Task<object?> GetProductDetailsAsync(string sku)
         {
