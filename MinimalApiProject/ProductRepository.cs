@@ -4,13 +4,10 @@ using Dapper;
 using MinimalApiProject.ModelsCsv;
 using System.Data;
 using System.Data.SqlClient;
-using System.Formats.Asn1;
 using System.Globalization;
 
 namespace MinimalApiProject
 {
-    
-
     public class ProductRepository
     {
         private readonly IDbConnection _db;
@@ -21,9 +18,6 @@ namespace MinimalApiProject
             _db = db;            
             Directory.CreateDirectory(_basePath);            
         }
-
-
-
 
         public async Task InitDb()
         {
@@ -75,8 +69,6 @@ namespace MinimalApiProject
             await File.WriteAllBytesAsync(productsFile, await httpClient.GetByteArrayAsync(AppSettings.GetCsvUrl("Products")));
             await File.WriteAllBytesAsync(inventoryFile, await httpClient.GetByteArrayAsync(AppSettings.GetCsvUrl("Inventory")));
             await File.WriteAllBytesAsync(pricesFile, await httpClient.GetByteArrayAsync(AppSettings.GetCsvUrl("Prices")));
-            httpClient.Dispose();
-
 
             var productMap = new Dictionary<string, int>();
 
@@ -91,8 +83,10 @@ namespace MinimalApiProject
                 BadDataFound = null
             }))
             {
-                var records1 = csv1.GetRecords<ProductCsv>().Where(x =>
-                    int.TryParse(x.shipping?.Trim().TrimEnd('h'), out var h1) && h1 <= 24 && x.is_wire == "0" && x.available == "1");
+                var records1 = csv1.GetRecords<ProductCsv>().Where(x => int.TryParse(x.shipping?.Trim().TrimEnd('h'), out var h1) 
+                                                                     && h1 <= 24 
+                                                                     && x.is_wire == "0" 
+                                                                     && x.available == "1");
 
                 foreach (var r in records1)
                 {
@@ -124,8 +118,9 @@ namespace MinimalApiProject
                 BadDataFound = null
             }))
             {
-                var records2 = csv2.GetRecords<InventoryCsv>().Where(x =>
-                    int.TryParse(x.shipping?.Trim().TrimEnd('h'), out var h2) && h2 <= 24 && productMap.ContainsKey(x.sku));
+                var records2 = csv2.GetRecords<InventoryCsv>().Where(x => int.TryParse(x.shipping?.Trim().TrimEnd('h'), out var h2) 
+                                                                       && h2 <= 24 
+                                                                       && productMap.ContainsKey(x.sku));
 
                 foreach (var r in records2)
                 {

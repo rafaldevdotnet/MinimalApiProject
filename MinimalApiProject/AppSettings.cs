@@ -1,8 +1,5 @@
-﻿using MinimalApiProject.Enums;
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Security.Cryptography;
-using System.Text;
 using MinimalApiProject.Helper;
 
 namespace MinimalApiProject
@@ -27,17 +24,6 @@ namespace MinimalApiProject
 
         public static string ConnectionString =>
             Get("ConnectionStrings:Default") ?? throw new InvalidOperationException("No connection string found.");
-
-        public static DbTypeEnum DatabaseType
-        {
-            get
-            {
-                var typeStr = Get("TypeDB");
-                if (!Enum.TryParse<DbTypeEnum>(typeStr, ignoreCase: true, out var dbType))
-                    throw new InvalidOperationException($"Invalid DB type: {typeStr}.\nOnly: MSSQL; Sqlite; Postgres");
-                return dbType;
-            }
-        }
 
         public static string GetCsvUrl(string key)
         {
