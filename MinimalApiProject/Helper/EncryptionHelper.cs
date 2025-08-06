@@ -3,6 +3,9 @@ using System.Text;
 
 namespace MinimalApiProject.Helper
 {
+    /// <summary>
+    /// Klasa do szyfrowania i deszyfrowania tekstu.
+    /// </summary>
     public static class EncryptionHelper
     {
         private static readonly byte[] Key = Encoding.UTF8.GetBytes("1234567890ABCDEF");
@@ -10,6 +13,11 @@ namespace MinimalApiProject.Helper
         private const string MarkerPrefix = "ENC{";
         private const string MarkerSuffix = "}";
 
+        /// <summary>
+        /// Szyfruje podany tekst.
+        /// </summary>
+        /// <param name="plainText"></param>
+        /// <returns>Zaszyfrowany ciąg znaków</returns>
         public static string Encrypt(string plainText)
         {
             using var aes = Aes.Create();
@@ -28,6 +36,11 @@ namespace MinimalApiProject.Helper
             return $"{MarkerPrefix}{base64}{MarkerSuffix}";
         }
 
+        /// <summary>
+        /// Deszyfruje podany tekst, jeśli jest on zaszyfrowany.
+        /// </summary>
+        /// <param name="cipherText"></param>
+        /// <returns>Odzyfrowany ciąg znaków</returns>
         public static string Decrypt(string cipherText)
         {
             if (!IsEncrypted(cipherText))
@@ -45,6 +58,11 @@ namespace MinimalApiProject.Helper
             return sr.ReadToEnd();
         }
 
+        /// <summary>
+        /// Sprawdza, czy podany tekst jest zaszyfrowany.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns></returns>
         public static bool IsEncrypted(string value)
         {
             return value.StartsWith(MarkerPrefix) && value.EndsWith(MarkerSuffix);

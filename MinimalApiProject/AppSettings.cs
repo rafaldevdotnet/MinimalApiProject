@@ -4,6 +4,12 @@ using MinimalApiProject.Helper;
 
 namespace MinimalApiProject
 {
+    /// <summary>
+    /// Klasa do zarządzania ustawieniami aplikacji z pliku appsettings.json
+    /// Klasa ta umożliwia odczyt wartości konfiguracyjnych, szyfrowanie wrażliwych danych.
+    /// Aby zaszyfrować dany parametr wystarczy jego wartość poprzedzić znakiem '*', np.
+    /// "Password": "*mojehasło"
+    /// </summary>
     public static class AppSettings
     {
         private static IConfigurationRoot? _configuration;
@@ -15,7 +21,7 @@ namespace MinimalApiProject
             CheckAndEncryptSensitiveValues();
         }
 
-        public static string? Get(string key)
+        private static string? Get(string key)
         {
             var value = _configuration?[key];
             if (value == null) return null;
@@ -30,6 +36,9 @@ namespace MinimalApiProject
             return Get($"CsvDownloadUrls:{key}") ?? throw new InvalidOperationException($"Missing CsvDownloadUrls:{key} in appsettings.json");
         }
 
+        /// <summary>
+        /// Sprawdza plik appsettings.json i szyfruje wszystkie wartości zaczynające się od '*'.
+        /// </summary>
         private static void CheckAndEncryptSensitiveValues()
         {
             if (!File.Exists(_configPath)) return;
@@ -50,6 +59,11 @@ namespace MinimalApiProject
             }
         }
 
+        /// <summary>
+        /// Rekurencyjnie przeszukuje obiekt JsonObject i szyfruje wartości zaczynające się od '*'.
+        /// </summary>
+        /// <param name="obj"></param>
+        /// <returns></returns>
         private static bool EncryptRecursive(JsonObject obj)
         {
             bool modified = false;

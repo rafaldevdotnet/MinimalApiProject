@@ -2,12 +2,16 @@
 using CsvHelper.Configuration;
 using Dapper;
 using MinimalApiProject.ModelsCsv;
+using System;
 using System.Data;
 using System.Data.SqlClient;
 using System.Globalization;
 
 namespace MinimalApiProject
 {
+    /// <summary>
+    /// Główne repozytorium odpowiedzialne za inicjalizację bazy danych oraz import danych z plików CSV.
+    /// </summary>
     public class ProductRepository
     {
         private readonly IDbConnection _db;
@@ -19,6 +23,11 @@ namespace MinimalApiProject
             Directory.CreateDirectory(_basePath);            
         }
 
+        /// <summary>
+        /// Inicjalizacja bazy danych.
+        /// Usuwa z bazy tabele Products, Inventory oraz Prices, a następnie tworzy je na nowo.
+        /// </summary>
+        /// <returns></returns>
         public async Task InitDb()
         {
             await _db.ExecuteAsync(@"
@@ -58,13 +67,18 @@ namespace MinimalApiProject
                         );");
         }
 
-
+        /// <summary>
+        /// Importuje dane z plików CSV znajdujących się pod zdalnymi adresami (pobranymi z AppSettings) do lokalnej bazy danych.
+        /// </summary>
+        /// <returns></returns>
         public async Task ImportDataAsync()
         {
+            // Ścieżki lokalne dla zapisanych plików CSV
             var productsFile = Path.Combine(_basePath, "Products.csv");
             var inventoryFile = Path.Combine(_basePath, "Inventory.csv");
             var pricesFile = Path.Combine(_basePath, "Prices.csv");
 
+            // Pobranie plików CSV z internetu
             using var httpClient = new HttpClient();
             await File.WriteAllBytesAsync(productsFile, await httpClient.GetByteArrayAsync(AppSettings.GetCsvUrl("Products")));
             await File.WriteAllBytesAsync(inventoryFile, await httpClient.GetByteArrayAsync(AppSettings.GetCsvUrl("Inventory")));
@@ -72,17 +86,18 @@ namespace MinimalApiProject
 
             var productMap = new Dictionary<string, int>();
 
-            // Load Products
+            // Pobieranie danych z pliku Products.csv
             var productList = new List<ProductCsv>();
             using (var reader1 = new StreamReader(productsFile))
             using (var csv1 = new CsvReader(reader1, new CsvConfiguration(CultureInfo.InvariantCulture)
             {
-                Delimiter = ";",
+                Delimiter = ";",//Zak, po którym system rozpoznaje kolejną kolumnę
                 HeaderValidated = null,
                 MissingFieldFound = null,
                 BadDataFound = null
             }))
             {
+                //Pobranie rekordów zgodnie z zadaniem czyli tylko te, które mają shipping <= 24h, nie są kablami czyli is_wire == "0" i dostępne czyli available == "1"
                 var records1 = csv1.GetRecords<ProductCsv>().Where(x => int.TryParse(x.shipping?.Trim().TrimEnd('h'), out var h1) 
                                                                      && h1 <= 24 
                                                                      && x.is_wire == "0" 
@@ -90,7 +105,10 @@ namespace MinimalApiProject
 
                 foreach (var r in records1)
                 {
+                    //Tworzenie listy produktów
                     productList.Add(r);
+
+                    //Mapowanie SKU do ID produktu
                     if (!productMap.ContainsKey(r.SKU))
                         productMap[r.SKU] = int.Parse(r.ID);
                 }
@@ -107,7 +125,7 @@ namespace MinimalApiProject
                 DefaultImage = r.default_image
             }), "Products");
 
-            // Load Inventory
+            // Pobieranie danych z pliku Inventory.csv
             var inventoryList = new List<InventoryCsv>();
             using (var reader2 = new StreamReader(inventoryFile))
             using (var csv2 = new CsvReader(reader2, new CsvConfiguration(CultureInfo.InvariantCulture)
@@ -118,6 +136,7 @@ namespace MinimalApiProject
                 BadDataFound = null
             }))
             {
+                // Pobranie rekordów zgodnie z zadaniem czyli tylko te, które mają shipping <= 24h i są w mapie produktów
                 var records2 = csv2.GetRecords<InventoryCsv>().Where(x => int.TryParse(x.shipping?.Trim().TrimEnd('h'), out var h2) 
                                                                        && h2 <= 24 
                                                                        && productMap.ContainsKey(x.sku));
@@ -137,7 +156,7 @@ namespace MinimalApiProject
                 ShippingCost = decimal.TryParse(r.shipping_cost, CultureInfo.InvariantCulture, out var sc) ? sc : 0
             }), "Inventory");
 
-            // Load Prices
+            // Pobieranie danych z pliku Prices.csv
             var priceList = new List<PriceCsv>();
             using (var reader3 = new StreamReader(pricesFile))
             using (var csv3 = new CsvReader(reader3, new CsvConfiguration(CultureInfo.InvariantCulture)
@@ -159,6 +178,13 @@ namespace MinimalApiProject
                 PricePerLogisticUnit = decimal.TryParse(r.Column6, CultureInfo.InvariantCulture, out var plu) ? plu : 0
             }), "Prices");
         }
+
+        /// <summary>
+        /// Wstawia hurtowo dane do tabeli SQL Server przy użyciu SqlBulkCopy.
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="data"></param>
+        /// <param name="tableName"></param>
         private void BulkInsert<T>(IEnumerable<T> data, string tableName)
         {
             if (_db is SqlConnection sqlConn)
@@ -169,18 +195,21 @@ namespace MinimalApiProject
                 var dataTable = new DataTable();
                 var props = typeof(T).GetProperties();
 
+                // Dodanie kolumn do DataTable na podstawie właściwości typu T
                 foreach (var prop in props)
                 {
                     dataTable.Columns.Add(prop.Name, Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType);
                 }
 
+                // Dodanie danych do DataTable
                 foreach (var item in data)
                 {
                     var values = props.Select(p => p.GetValue(item) ?? DBNull.Value).ToArray();
                     dataTable.Rows.Add(values);
                 }
 
-                bulkCopy.DestinationTableName = tableName;
+
+                // Mapowanie kolumn w zależności od tabeli
                 if (tableName == "Inventory")
                 {
                     bulkCopy.ColumnMappings.Add("ProductId", "ProductId");
@@ -195,11 +224,29 @@ namespace MinimalApiProject
                     bulkCopy.ColumnMappings.Add("PricePerUnit", "PricePerUnit");
                     bulkCopy.ColumnMappings.Add("PricePerLogisticUnit", "PricePerLogisticUnit");
                 }
+
+                
+                bulkCopy.DestinationTableName = tableName;
+                //Hurtowe wstawianie danych do tabeli SQL
                 bulkCopy.WriteToServer(dataTable);
             }
         }
 
-
+        /// <summary>
+        /// Zwraca szczegóły produktu wraz z jego ceną i stanem magazynowym na podstawie SKU.
+        /// Zgodnie z zadaniem:
+        /// a.Nazwa produktu
+        /// b.EAN
+        /// c.Nazwa producenta
+        /// d.Kategoria
+        /// e.URL do zdjęcia produktu
+        /// f.Stan magazynowy
+        /// g.Jednostkę logistyczną produktu
+        /// h.Cenę netto zakupu produktu
+        /// i.Koszt dostawy
+        /// </summary>
+        /// <param name="sku"></param>
+        /// <returns></returns>
         public async Task<object?> GetProductDetailsAsync(string sku)
         {
             var sql = @"SELECT 
