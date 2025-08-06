@@ -22,7 +22,7 @@ Minimalistyczne REST API oparte na ASP.NET Core (.NET 7) z wykorzystaniem Dapper
 ## 🔧 Wymagania
 
 - .NET 7 SDK
-- SQL Server (lub alternatywa wspierana przez projekt)
+- MS SQL Server
 - Visual Studio / Rider / VS Code
 
 ---
@@ -32,8 +32,7 @@ Minimalistyczne REST API oparte na ASP.NET Core (.NET 7) z wykorzystaniem Dapper
 1. **Sklonuj repozytorium:**
 
    ```bash
-   git clone https://github.com/TwojeKonto/ProductApiProject.git
-   cd ProductApiProject
+   git clone https://github.com/rafaldevdotnet/MinimalApiProject.git   
    ```
 
 2. **Skonfiguruj plik `appsettings.json`:**
